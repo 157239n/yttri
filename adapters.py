@@ -3,6 +3,12 @@ from dbs import *
 settings.zircon.http_server = "https://zircon.aigu.vn"
 settings.zircon.ws_server = "wss://wszircon.aigu.vn"
 
+async def abrowserAvailable():
+    try: b = zircon.newBrowser(); await b.pickExtFromGroup("yttri"); return True
+    except: return False
+
+# ------------------------------------------- nhentai
+
 async def nhentai_pageStats(b): return (await (await b.querySelector(".page-number")).value(".textContent")).split("\xa0of\xa0") | apply(int) | aS(list)
 async def nhentai_collectUrls(b):
     srcs = []
@@ -27,17 +33,18 @@ async def ep_scan_nhentai(ep): # grab the urls
             db["pages"].insert(episodeId=ep.id, pageI=i, url=url, complete=0, content=b"", hash1=0)
         ep.nPages = totalPages
     await ep_scan_2(ep)
+def u64_to_i64(u: int) -> int: u &= (1 << 64) - 1; return u - (1 << 64) if u >= (1 << 63) else u
 async def ep_scan_2(ep): # grab the actual images
     for page in db["pages"].select(f"where episodeId = {ep.id} and complete = 0"):
         print(page.id)
         if len(page.content) > 0: page.complete = 1; continue
         try: page.content = requests.get(page.url).content | toImg() | toBytes(); page.complete = 1
         except Exception as e: print(e); page.complete = 0
+        try: im = page.content | toImg(); page.hash1 = im | toHash("med") | aS(u64_to_i64); page.hash2 = im | toHash("diff") | aS(u64_to_i64); page.hash3 = im | toHash("percep") | aS(u64_to_i64); page.hash4 = im | toHash("block") | aS(u64_to_i64)
+        except: pass
     if len(db["pages"].select(f"where episodeId = {ep.id} and complete = 0")) == 0: ep.complete = 1
 
-
-
-
+# ------------------------------------------- hentaifox
 
 async def hfox_pageNum(b): return int(await (await b.querySelector(".current")).value(".textContent"))
 async def hfox_nPages(b): return int(await (await b.querySelector(".total_pages")).value(".textContent"))
@@ -65,7 +72,7 @@ async def ep_scan_hfox(ep): # grab the urls
         ep.nPages = totalPages
     await ep_scan_2(ep)
 
-
+# ------------------------------------------- hentai2read
 
 async def h2read_pageStats(b): return [int(x.strip()) for x in (await (await b.querySelector(".page-select_numbers")).value(".textContent")).split("of")]
 async def h2read_collectUrls(b):
