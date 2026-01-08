@@ -175,7 +175,7 @@ def dups():
 <button id="{pre}_genHash" class="btn">genHash</button><script>{pre}_genHash.onclick = async () => {{ await wrapToastReq(fetch("/genHash")); }}</script>""" + \
     f"<div style='display: flex; flex-direction: row; flex-wrap: wrap'>{s}</div>"
 
-app.run(host="0.0.0.0", port=6005) # same as normal flask code
+app.run(host="0.0.0.0", port=80) # same as normal flask code
 
 
 

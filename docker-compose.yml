@@ -1,0 +1,15 @@
+services:
+  yttri:
+    restart: always
+    build: .
+    container_name: yttri-yttri-1
+    networks:
+      - proxynet
+    volumes:
+      - ./:/code
+networks:
+  proxynet:
+    name: main
+    external: true
+
+

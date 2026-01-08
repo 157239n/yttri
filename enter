@@ -1,0 +1,4 @@
+#!/bin/bash
+
+docker exec -it yttri-yttri-1 bash
+
