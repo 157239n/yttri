@@ -5,9 +5,9 @@ app = web.Flask(__name__)
 @app.route("/api/ep/<int:epId>/scan")
 def api_ep_scan(epId):
     ep = db["episodes"][epId]
-    if ep.site == "nhentai": asyncio.run(ep_scan_nhentai(ep)); return "ok"
-    if ep.site == "hfox": asyncio.run(ep_scan_hfox(ep)); return "ok"
-    if ep.site == "h2read": asyncio.run(ep_scan_h2read(ep)); return "ok"
+    if ep.site == "nhentai": ep_scan_nhentai(ep); return "ok"
+    if ep.site == "hfox": ep_scan_hfox(ep); return "ok"
+    if ep.site == "h2read": ep_scan_h2read(ep); return "ok"
 
 @app.route("/api/tag/new", methods=["POST"])
 def api_tag_new(js): return str(db["tags"].insert(name=js["name"]).id)
@@ -37,11 +37,13 @@ def fragment_ep(epId): pre = init._jsDAuto(); ep = db["episodes"][epId]; return 
 {pre}_view.onclick = async () => {{ window.open("/viewer/{epId}/1", "_blank") }}; {pre}_hview.onclick = async () => {{ window.open("/hviewer/{epId}/1", "_blank") }}</script>"""
 
 def imgEngine(pre, epId, pageI, orient:str=""): ep = db["episodes"][epId]; imgUrls = [f"/{orient}page/{idx[0]}" for idx in db.query(f"select id from pages where episodeId = {ep.id} order by pageI")]; return f"""
-async function preloadImages(urls) {{ const imgs = []; for (const url of urls) {{ const img = new Image(); img.src = url; await img.decode(); imgs.push(img); }} return imgs; }}
+async function preloadImages(urls) {{ let n = urls.length; for (let i = 0; i < n; i++)
+    {pre}_imgContainer.insertAdjacentHTML('beforeend', `<img src="${{urls[i]}}" id="img_${{i}}" class="img" style="display: none; flex: 1; max-height: 100vh" />`); }}
 let imgUrls = {json.dumps(imgUrls)}; let imgI = {pageI}; preloadImages(imgUrls);
 function updateCounter() {{ {pre}_counter.innerHTML = `${{imgI+1}} of {ep.nPages}`; history.pushState(null, "", `/{orient}viewer/{epId}/${{imgI+1}}`); }}
-function prevPage() {{ imgI = Math.max(0, imgI-1); {pre}_img.src = imgUrls[imgI]; updateCounter(); }}
-function nextPage() {{ imgI = Math.min(imgUrls.length-1, imgI+1); {pre}_img.src = imgUrls[imgI]; updateCounter(); }}; prevPage();
+function setPage() {{ Array.from(document.querySelectorAll(".img")).map(x => {{ x.style.display = "none"; }}); document.querySelector(`#img_${{imgI}}`).style.display = "block"; updateCounter(); }}
+function prevPage() {{ imgI = Math.max(0, imgI-1); setPage(); }}
+function nextPage() {{ imgI = Math.min(imgUrls.length-1, imgI+1); setPage(); }}; prevPage();
 document.addEventListener("keydown", (e) => {{ if (e.key === "ArrowRight") nextPage(); if (e.key === "ArrowLeft") prevPage(); }});"""
 
 @app.route("/hviewer/<int:epId>/<int:pageI>", daisyEnv=True)
@@ -70,6 +72,13 @@ def viewer(epId, pageI):
             <h2>Episode {ep.id}</h2><div style="flex: 1"></div>
             <button id="{pre}_save" class="btn">Save</button>
         </div>
+        <div style="display: flex; flex-direction: row; align-items: center">
+            <div style="flex: 1"></div>
+            <button id="{pre}_prev" class="btn">Prev</button>
+            <div id="{pre}_counter" style="margin: 0px 8px"></div>
+            <button id="{pre}_next" class="btn">Next</button>
+            <div style="flex: 1"></div>
+        </div>
         <div>OG url: <a href="{ep.url}" target="_blank" style="color: blue">{ep.url}</a></div>
         <div>Created time: {ep.createdTime | toIso('Asia/Hanoi') | op().replace(*'T ')}</div>
         <div>Quality</div><input id="{pre}_quality" class="input input-bordered" type="number" style="width: 100%" value="{ep.quality or 0}" />
@@ -77,16 +86,9 @@ def viewer(epId, pageI):
         <div>Tags</div><textarea id="{pre}_tags" class="textarea textarea-bordered" style="width: 100%">{ep.tagIds}</textarea>
         <div style="display: flex; flex-direction: row; align-items: center; flex-wrap: wrap">{tagBtns}</div>
     </div>
-    <div style="flex: 7; height: 99vh; display: flex; flex-direction: column; align-items: center; position: relative">
+    <div id="{pre}_imgContainer" style="flex: 7; height: 99vh; display: flex; flex-direction: column; align-items: center; position: relative">
         <div id="{pre}_leftPane" style="position: absolute; left: 0px; top: 0px; bottom: 0px; width: 100px"></div>
         <div id="{pre}_rightPane" style="position: absolute; right: 0px; top: 0px; bottom: 0px; width: 100px"></div>
-        <img id="{pre}_img" style="flex: 1; max-height: 90vh" />
-        <div style="flex: 1"></div>
-        <div style="display: flex; flex-direction: row; align-items: center">
-            <button id="{pre}_prev" class="btn">Prev</button>
-            <div id="{pre}_counter" style="margin: 0px 8px"></div>
-            <button id="{pre}_next" class="btn">Next</button>
-        </div><div style="flex: 1"></div>
     </div>
 </div>
 <script>{imgEngine(pre, epId, pageI)}
@@ -105,12 +107,11 @@ def page(pageId): page = db["pages"][pageId]; return page.content, 200, {"Conten
 @app.route("/hpage/<int:pageId>") # explicitly does not cache rotated images, because that would take up so much space (double it in fact!) for not that much gain
 def hpage(pageId): return db["pages"][pageId].content | toImg() | op().transpose(PIL.Image.Transpose.ROTATE_90) | toBytes(), 200, {"Content-Type": "image/jpg"}
 
-k1.logErr.flask(app)
-sql.lite_flask(app)
+k1.logErr.flask(app); sql.lite_flask(app)
 
 @app.route("/fragment/browserAvailable")
 def fragment_browserAvailable():
-    res = asyncio.run(abrowserAvailable()); msg = f". Activate new window by installing the chrome extension and going to https://zircon.aigu.vn/join/yttri"
+    res = browserAvailable(); msg = f". Activate new window by installing the chrome extension and going to https://zircon.aigu.vn/join/yttri"
     return f"Browser available: {res}{'' if res else msg}"
 
 @app.route("/", daisyEnv=True)
@@ -140,6 +141,7 @@ def index():
         <div id="{pre}_browserAvailable">Browser available: (fetching...)</div>
         <div style="overflow-x: auto">{ui2}</div><div id="{pre}_epDetails"></div>
         <div style="width: 100%; overflow-x: auto">{dups()}</div>
+        <div style="width: 100%; overflow-x: auto">{cyclicCheck()}</div>
     </div>
 </div>
 <script>
@@ -174,6 +176,13 @@ def dups():
     return f"""<h2>Image hashing</h2><div>These check for episode duplicates. So all pages/images have several image hashes (i64 value). All of them are checked against all others, to find pages that have identical hashes. Say pageA and pageB and pageC has similar hashes. Then it looks up the episodeId of all 3 pages: (epA, epB, epC). Then count the occurances of these tuples, sort by frequency and display in the tables below. This way you can quickly see what episodes have very similar images to what other episodes. If the frequency column is high, it means there's strong similarity correlation between 2 episodes and should be manually checked for duplication</div>
 <button id="{pre}_genHash" class="btn">genHash</button><script>{pre}_genHash.onclick = async () => {{ await wrapToastReq(fetch("/genHash")); }}</script>""" + \
     f"<div style='display: flex; flex-direction: row; flex-wrap: wrap'>{s}</div>"
+
+def cyclicCheck():
+    d1 = db.query("select episodeId, count(*) from pages group by episodeId order by episodeId") | toDict()
+    d2 = db.query("select id, nPages from episodes order by id") | toDict(); s = ""
+    for k,v in d2.items():
+        if d1.get(k, 0) != v: s += f"ep {k}: {d1.get(k, 0)} vs {v}\n"
+    return f"<pre>Page number cyclical check:\n{s}</pre>"
 
 app.run(host="0.0.0.0", port=80) # same as normal flask code
 

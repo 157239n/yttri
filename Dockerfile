@@ -13,10 +13,10 @@ RUN uv venv env1 && echo "\nsource /root/.bashenv\n" >> /root/.bashrc && cat <<E
     function run() { watchfiles --filter python --sigint-timeout 2 'python main.py'; }
     function runOld() { while true; do python main.py >/dev/null 2>&1; done; }
     function kill() { pkill watchfiles; pkill python; }
-    function update() { uv pip install --force-reinstall --extra-index-url http://172.30.6.100:3141/ --trusted-host 172.30.6.100 aigu k1lib; }
+    function update() { uv pip install --force-reinstall --extra-index-url https://pypi.aigu.vn k1lib; }
 EOF
 RUN . /root/env1/bin/activate && uv pip install watchfiles flask requests unidecode pycryptodome bcrypt python-magic
-RUN . /root/env1/bin/activate && uv pip install --force-reinstall --extra-index-url http://172.30.6.100:3141/ --trusted-host 172.30.6.100 aigu mpld3 openmeteo_requests && echo a1
+RUN . /root/env1/bin/activate && uv pip install --force-reinstall --extra-index-url https://pypi.aigu.vn k1lib websockets && echo a2
 WORKDIR /code
 CMD ["./startup"]
 

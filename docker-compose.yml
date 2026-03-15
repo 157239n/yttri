@@ -3,13 +3,9 @@ services:
     restart: always
     build: .
     container_name: yttri-yttri-1
-    networks:
-      - proxynet
+    ports:
+      - 5003:80
     volumes:
       - ./:/code
-networks:
-  proxynet:
-    name: main
-    external: true
 
 
