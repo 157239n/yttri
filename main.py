@@ -4,7 +4,7 @@ app = web.Flask(__name__)
 
 @app.route("/api/ep/<int:epId>/scan")
 def api_ep_scan(epId):
-    ep = db["episodes"][epId]
+    ep = db["eps"][epId]
     if ep.site == "nhentai": ep_scan_nhentai(ep); return "ok"
     if ep.site == "hfox": ep_scan_hfox(ep); return "ok"
     if ep.site == "h2read": ep_scan_h2read(ep); return "ok"
@@ -13,30 +13,30 @@ def api_ep_scan(epId):
 def api_tag_new(js): return str(db["tags"].insert(name=js["name"]).id)
 @app.route("/api/ep/new", methods=["POST"])
 def api_ep_new(js):
-    url = js["url"]; boilerplate = dict(url=url, complete=0, createdTime=int(time.time()), tagIds=[])
+    url = js["url"]; boilerplate = dict(url=url, urls=[], createdTime=int(time.time()), tagIds=[])
     if "nhentai.net" in url:
         code = str(int(url.split("nhentai.net/g/")[1].split("/")[0]))
-        if db["episodes"].lookup(site="nhentai", code=code): web.toast_error("This episode has appeared before")
-        db["episodes"].insert(site="nhentai", code=code, **boilerplate); return "ok"
+        if db["eps"].lookup(site="nhentai", code=code): web.toast_error("This episode has appeared before")
+        db["eps"].insert(site="nhentai", code=code, **boilerplate); return "ok"
     if "hentaifox.com" in url:
         code = str(int(url.split("hentaifox.com/g/")[1].split("/")[0]))
-        if db["episodes"].lookup(site="hfox", code=code): web.toast_error("This episode has appeared before")
-        db["episodes"].insert(site="hfox", code=code, **boilerplate); return "ok"
+        if db["eps"].lookup(site="hfox", code=code): web.toast_error("This episode has appeared before")
+        db["eps"].insert(site="hfox", code=code, **boilerplate); return "ok"
     if "hentai2read.com" in url:
         code = "/".join(url.split("hentai2read.com/")[1].strip("/").split("/")[:2])
-        if db["episodes"].lookup(site="h2read", code=code): web.toast_error("This episode has appeared before")
-        db["episodes"].insert(site="h2read", code=code, **boilerplate); return "ok"
+        if db["eps"].lookup(site="h2read", code=code): web.toast_error("This episode has appeared before")
+        db["eps"].insert(site="h2read", code=code, **boilerplate); return "ok"
     web.toast_error("Don't have any processor available for this site")
 @app.route("/api/ep/<int:epId>/del")
-def api_ep_delete(epId): db.query(f"delete from pages where episodeId = {epId}"); del db["episodes"][epId]; return "ok"
+def api_ep_delete(epId): db.query(f"delete from pages where epId = {epId}"); del db["eps"][epId]; return "ok"
 @app.route("/fragment/ep/<int:epId>")
-def fragment_ep(epId): pre = init._jsDAuto(); ep = db["episodes"][epId]; return f"""
+def fragment_ep(epId): pre = init._jsDAuto(); ep = db["eps"][epId]; return f"""
 <h2>Episode {ep.url}</h2><button id="{pre}_scan" class="btn" style="margin-right: 8px">Scan</button>
 <button id="{pre}_view" class="btn" style="margin-right: 8px">Vertical viewer</button><button id="{pre}_hview" class="btn">Horizontal viewer</button>
 <script>{pre}_scan.onclick = async () => {{ await wrapToastReq(fetch(`/api/ep/{ep.id}/scan`)); }}
 {pre}_view.onclick = async () => {{ window.open("/viewer/{epId}/1", "_blank") }}; {pre}_hview.onclick = async () => {{ window.open("/hviewer/{epId}/1", "_blank") }}</script>"""
 
-def imgEngine(pre, epId, pageI, orient:str=""): ep = db["episodes"][epId]; imgUrls = [f"/{orient}page/{idx[0]}" for idx in db.query(f"select id from pages where episodeId = {ep.id} order by pageI")]; return f"""
+def imgEngine(pre, epId, pageI, orient:str=""): ep = db["eps"][epId]; imgUrls = [f"/{orient}page/{idx[0]}" for idx in db.query(f"select id from pages where epId = {ep.id} order by pageI")]; return f"""
 async function preloadImages(urls) {{ let n = urls.length; for (let i = 0; i < n; i++)
     {pre}_imgContainer.insertAdjacentHTML('beforeend', `<img src="${{urls[i]}}" id="img_${{i}}" class="img" style="display: none; flex: 1; max-height: 100vh" />`); }}
 let imgUrls = {json.dumps(imgUrls)}; let imgI = {pageI}; preloadImages(imgUrls);
@@ -56,7 +56,7 @@ def hviewer(epId, pageI): pre = init._jsDAuto(); return f"""
 
 @app.route("/viewer/<int:epId>/<int:pageI>", daisyEnv=True)
 def viewer(epId, pageI):
-    pre = init._jsDAuto(); ep = db["episodes"][epId]
+    pre = init._jsDAuto(); ep = db["eps"][epId]
     id2Tag = {x:y for x,y in db.query("select id, name from tags")}; tag2Id = {y:x for x,y in db.query("select id, name from tags")}
     tagBtns = "".join([f"<button onclick='toggleTag({x})' class='btn' style='margin-right: 8px; margin-bottom: 8px'>{y}</button>" for x,y in id2Tag.items()])
     return f"""
@@ -100,7 +100,7 @@ function toggleTag(tagId) {{ if (tagIds.includes(tagId)) {{ const index = tagIds
 </script>"""
 
 @app.route("/api/ep/<int:epId>/save", methods=["POST"])
-def api_ep_save(epId, js): ep = db["episodes"][epId]; ep.quality = js["quality"]; ep.descr = js["descr"]; ep.tagIds = js["tagIds"]; return "ok"
+def api_ep_save(epId, js): ep = db["eps"][epId]; ep.quality = js["quality"]; ep.descr = js["descr"]; ep.tagIds = js["tagIds"]; return "ok"
 
 @app.route("/page/<int:pageId>")
 def page(pageId): page = db["pages"][pageId]; return page.content, 200, {"Content-Type": "image/jpg"}
@@ -118,7 +118,7 @@ def fragment_browserAvailable():
 def index():
     pre = init._jsDAuto(); ui1 = db.query("select id, name from tags") | viz.Table(["id", "name"])
     id2Tag = {x:y for x,y in db.query("select id, name from tags")}
-    ui2 = db.query("select id, site, code, nPages, complete, quality, createdTime, tagIds, descr from episodes order by id desc") | apply(lambda tagIds: [id2Tag[tagId] for tagId in json.loads(tagIds)] | join(", "), 7) | randomize(None) | (toJsFunc("term") | grep("${term}", lower=True) | viz.Table(["id", "site", "code", "nPages", "complete", "quality", "createdTime", "tagIds", "descr"], ondeleteFName=f"{pre}_epDel", onclickFName=f"{pre}_epSelect", selectable=True, sortF=True, height=500)) | op().interface() | toHtml()
+    ui2 = db.query("select id, site, code, nPages, errUrls, quality, createdTime, tagIds, descr from eps order by id desc") | apply(lambda tagIds: [id2Tag[tagId] for tagId in json.loads(tagIds)] | join(", "), 7) | randomize(None) | (toJsFunc("term") | grep("${term}", lower=True) | viz.Table(["id", "site", "code", "nPages", "complete", "quality", "createdTime", "tagIds", "descr"], ondeleteFName=f"{pre}_epDel", onclickFName=f"{pre}_epSelect", selectable=True, sortF=True, height=500)) | op().interface() | toHtml()
     return f"""
 <style>
     #main {{ flex-direction: column-reverse; }}
@@ -170,16 +170,16 @@ def dups():
     for i in range(1, 5):
         with k1.captureStdout() as out:
             db.query(f"SELECT hash{i}, count(*) as c FROM pages GROUP BY hash{i} HAVING COUNT(*) > 1 order by c desc") | filt("x", 0)\
-            | ~apply(lambda h, freq: db.query(f"select episodeId from pages where hash{i} = {h}"))\
-            | apply(lambda res: res | cut(0) | sort(None) | unique(None) | aS(list) | aS(tuple)) | filt("len(x)>1") | count() | ~sort(0) | insert(["freq", "episodeIds", "%"]) | display(None)
+            | ~apply(lambda h, freq: db.query(f"select epId from pages where hash{i} = {h}"))\
+            | apply(lambda res: res | cut(0) | sort(None) | unique(None) | aS(list) | aS(tuple)) | filt("len(x)>1") | count() | ~sort(0) | insert(["freq", "epIds", "%"]) | display(None)
         s += f"<div style='min-width: 500px'><h3>hash{i}: {descs[i]}</h3><pre>" + (out() | join('\n')) + "</pre></div>"
-    return f"""<h2>Image hashing</h2><div>These check for episode duplicates. So all pages/images have several image hashes (i64 value). All of them are checked against all others, to find pages that have identical hashes. Say pageA and pageB and pageC has similar hashes. Then it looks up the episodeId of all 3 pages: (epA, epB, epC). Then count the occurances of these tuples, sort by frequency and display in the tables below. This way you can quickly see what episodes have very similar images to what other episodes. If the frequency column is high, it means there's strong similarity correlation between 2 episodes and should be manually checked for duplication</div>
+    return f"""<h2>Image hashing</h2><div>These check for episode duplicates. So all pages/images have several image hashes (i64 value). All of them are checked against all others, to find pages that have identical hashes. Say pageA and pageB and pageC has similar hashes. Then it looks up the epId of all 3 pages: (epA, epB, epC). Then count the occurances of these tuples, sort by frequency and display in the tables below. This way you can quickly see what episodes have very similar images to what other episodes. If the frequency column is high, it means there's strong similarity correlation between 2 episodes and should be manually checked for duplication</div>
 <button id="{pre}_genHash" class="btn">genHash</button><script>{pre}_genHash.onclick = async () => {{ await wrapToastReq(fetch("/genHash")); }}</script>""" + \
     f"<div style='display: flex; flex-direction: row; flex-wrap: wrap'>{s}</div>"
 
 def cyclicCheck():
-    d1 = db.query("select episodeId, count(*) from pages group by episodeId order by episodeId") | toDict()
-    d2 = db.query("select id, nPages from episodes order by id") | toDict(); s = ""
+    d1 = db.query("select epId, count(*) from pages group by epId order by epId") | toDict()
+    d2 = db.query("select id, nPages from eps order by id") | toDict(); s = ""
     for k,v in d2.items():
         if d1.get(k, 0) != v: s += f"ep {k}: {d1.get(k, 0)} vs {v}\n"
     return f"<pre>Page number cyclical check:\n{s}</pre>"
