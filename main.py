@@ -1,19 +1,20 @@
 from adapters import *
 
 app = web.Flask(__name__)
+settings.zircon.clientGroup = "yttri"
 
-@app.route("/api/ep/<int:epId>/scan")
-def api_ep_scan(epId):
-    ep = db["eps"][epId]
-    if ep.site == "nhentai": ep_scan_nhentai(ep); return "ok"
-    if ep.site == "hfox": ep_scan_hfox(ep); return "ok"
-    if ep.site == "h2read": ep_scan_h2read(ep); return "ok"
+@app.route("/api/fix/h2read")
+def api_fix_h2read(): # fix first page, which seem to always have this particular bug
+    pages = db["pages"]
+    for pageId, url in db.query("select pages.id, pages.url from pages join eps on pages.epId = eps.id where eps.site = 'h2read' and pageI = 0 and errImg != '' and pages.url like '%static.hentai.direct%'"):
+        page = pages[pageId]; page.url = url.replace("static.hentai.direct", "static.hentaicdn.com"); page.errImg = None
+    return "ok"
 
 @app.route("/api/tag/new", methods=["POST"])
 def api_tag_new(js): return str(db["tags"].insert(name=js["name"]).id)
 @app.route("/api/ep/new", methods=["POST"])
 def api_ep_new(js):
-    url = js["url"]; boilerplate = dict(url=url, urls=[], createdTime=int(time.time()), tagIds=[])
+    url = js["url"]; boilerplate = dict(url=url, urls=[], createdTime=int(time.time()), tagIds=[], descr=js.get("descr", None))
     if "nhentai.net" in url:
         code = str(int(url.split("nhentai.net/g/")[1].split("/")[0]))
         if db["eps"].lookup(site="nhentai", code=code): web.toast_error("This episode has appeared before")
@@ -27,14 +28,20 @@ def api_ep_new(js):
         if db["eps"].lookup(site="h2read", code=code): web.toast_error("This episode has appeared before")
         db["eps"].insert(site="h2read", code=code, **boilerplate); return "ok"
     web.toast_error("Don't have any processor available for this site")
+
+@app.route("/api/ingest/bulk", methods=["POST"])
+def api_ingest_bulk(js):
+    for url, descr in js["data"]:
+        try: api_ep_new({"url": url, "descr": descr})
+        except web._ShortCircuit as e: pass
+    return "ok"
+
 @app.route("/api/ep/<int:epId>/del")
 def api_ep_delete(epId): db.query(f"delete from pages where epId = {epId}"); del db["eps"][epId]; return "ok"
 @app.route("/fragment/ep/<int:epId>")
-def fragment_ep(epId): pre = init._jsDAuto(); ep = db["eps"][epId]; return f"""
-<h2>Episode {ep.url}</h2><button id="{pre}_scan" class="btn" style="margin-right: 8px">Scan</button>
+def fragment_ep(epId): pre = init._jsDAuto(); ep = db["eps"][epId]; return f"""<h2>Episode {ep.url}</h2>
 <button id="{pre}_view" class="btn" style="margin-right: 8px">Vertical viewer</button><button id="{pre}_hview" class="btn">Horizontal viewer</button>
-<script>{pre}_scan.onclick = async () => {{ await wrapToastReq(fetch(`/api/ep/{ep.id}/scan`)); }}
-{pre}_view.onclick = async () => {{ window.open("/viewer/{epId}/1", "_blank") }}; {pre}_hview.onclick = async () => {{ window.open("/hviewer/{epId}/1", "_blank") }}</script>"""
+<script>{pre}_view.onclick = async () => {{ window.open("/viewer/{epId}/1", "_blank") }}; {pre}_hview.onclick = async () => {{ window.open("/hviewer/{epId}/1", "_blank") }}</script>"""
 
 def imgEngine(pre, epId, pageI, orient:str=""): ep = db["eps"][epId]; imgUrls = [f"/{orient}page/{idx[0]}" for idx in db.query(f"select id from pages where epId = {ep.id} order by pageI")]; return f"""
 async function preloadImages(urls) {{ let n = urls.length; for (let i = 0; i < n; i++)
@@ -103,22 +110,25 @@ function toggleTag(tagId) {{ if (tagIds.includes(tagId)) {{ const index = tagIds
 def api_ep_save(epId, js): ep = db["eps"][epId]; ep.quality = js["quality"]; ep.descr = js["descr"]; ep.tagIds = js["tagIds"]; return "ok"
 
 @app.route("/page/<int:pageId>")
-def page(pageId): page = db["pages"][pageId]; return page.content, 200, {"Content-Type": "image/jpg"}
+def page(pageId): page = db["pages"][pageId]; return page.imgB, 200, {"Content-Type": "image/jpg"}
 @app.route("/hpage/<int:pageId>") # explicitly does not cache rotated images, because that would take up so much space (double it in fact!) for not that much gain
 def hpage(pageId): return db["pages"][pageId].content | toImg() | op().transpose(PIL.Image.Transpose.ROTATE_90) | toBytes(), 200, {"Content-Type": "image/jpg"}
 
-k1.logErr.flask(app); sql.lite_flask(app)
+k1.logErr.flask(app); sql.lite_flask(app); k1.cron.flask(app)
 
 @app.route("/fragment/browserAvailable")
 def fragment_browserAvailable():
     res = browserAvailable(); msg = f". Activate new window by installing the chrome extension and going to https://zircon.aigu.vn/join/yttri"
     return f"Browser available: {res}{'' if res else msg}"
 
+@app.route("/api/clearErrors")
+def api_clearErrors(): db.query("update eps set errUrls = null where errUrls != ''"); return "ok"
+
 @app.route("/", daisyEnv=True)
 def index():
     pre = init._jsDAuto(); ui1 = db.query("select id, name from tags") | viz.Table(["id", "name"])
     id2Tag = {x:y for x,y in db.query("select id, name from tags")}
-    ui2 = db.query("select id, site, code, nPages, errUrls, quality, createdTime, tagIds, descr from eps order by id desc") | apply(lambda tagIds: [id2Tag[tagId] for tagId in json.loads(tagIds)] | join(", "), 7) | randomize(None) | (toJsFunc("term") | grep("${term}", lower=True) | viz.Table(["id", "site", "code", "nPages", "complete", "quality", "createdTime", "tagIds", "descr"], ondeleteFName=f"{pre}_epDel", onclickFName=f"{pre}_epSelect", selectable=True, sortF=True, height=500)) | op().interface() | toHtml()
+    ui2 = db.query("select id, site, code, nPages, errUrls, quality, createdTime, tagIds, descr from eps order by id desc") | apply(lambda x: "not started" if x is None else ("done" if x == "" else "error"), 4) | apply(lambda tagIds: [id2Tag[tagId] for tagId in json.loads(tagIds)] | join(", "), 7) | randomize(None) | (toJsFunc("term") | grep("${term}", lower=True) | viz.Table(["id", "site", "code", "nPages", "complete", "quality", "createdTime", "tagIds", "descr"], ondeleteFName=f"{pre}_epDel", onclickFName=f"{pre}_epSelect", selectable=True, sortF=True, height=500)) | op().interface() | toHtml()
     return f"""
 <style>
     #main {{ flex-direction: column-reverse; }}
@@ -136,7 +146,8 @@ def index():
         <div style="display: flex; flex-direction: row; align-items: center">
             <h2>Episodes</h2>
             <input id="{pre}_epUrl" class="input input-bordered" style="width: 150px; margin: 0px 8px" placeholder="Name" />
-            <button id="{pre}_epNew" class="btn">New</button>
+            <button id="{pre}_epNew" class="btn" style="margin-right: 8px">New</button>
+            <button class="btn" onclick="wrapToastReq(fetch('/api/clearErrors'))">Clear errors</button>
         </div>
         <div id="{pre}_browserAvailable">Browser available: (fetching...)</div>
         <div style="overflow-x: auto">{ui2}</div><div id="{pre}_epDetails"></div>
