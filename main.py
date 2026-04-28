@@ -122,7 +122,7 @@ def fragment_browserAvailable():
     return f"Browser available: {res}{'' if res else msg}"
 
 @app.route("/api/clearErrors")
-def api_clearErrors(): db.query("update eps set errUrls = null where errUrls != ''"); return "ok"
+def api_clearErrors(): db.query("update eps set errUrls = null where errUrls != ''"); db.query("update pages set errImg = null where errImg != ''"); return "ok"
 
 @app.route("/", daisyEnv=True)
 def index():

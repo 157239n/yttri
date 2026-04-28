@@ -12,7 +12,7 @@ def browserAvailable():
 
 @k1.cron(delay=12)
 def scanLoop(): # auto scans new episodes
-    for ep in db["eps"].select("where errUrls is null and site = 'h2read' limit 1"):
+    for ep in db["eps"].select("where errUrls is null and site = 'nhentai' limit 1"):
         print(f"scanning {ep.id}")
         try:
             if ep.site == "nhentai": ep_scan_nhentai(ep)

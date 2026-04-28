@@ -7,5 +7,7 @@ services:
       - 5003:80
     volumes:
       - ./:/code
+      - /tank/sqlite/yttri/dbs:/code/dbs
+      - /tank/sqlite/yttri/k1_dbs:/code/k1_dbs
 
 
