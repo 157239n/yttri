@@ -10,6 +10,9 @@ def api_fix_h2read(): # fix first page, which seem to always have this particula
         page = pages[pageId]; page.url = url.replace("static.hentai.direct", "static.hentaicdn.com"); page.errImg = None
     return "ok"
 
+@k1.cron(delay=10)
+def scanImgs(): db.query("update pages set errImg = null where length(imgB) = 0 and errImg = ''") # scans for empty images, and redownload them
+
 @app.route("/api/tag/new", methods=["POST"])
 def api_tag_new(js): return str(db["tags"].insert(name=js["name"]).id)
 @app.route("/api/ep/new", methods=["POST"])
